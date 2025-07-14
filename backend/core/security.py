@@ -1,12 +1,14 @@
 # backend/core/security.py
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
+from fastapi import HTTPException, status
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from .config import settings
+from .models import TokenData
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -58,3 +60,36 @@ def create_access_token(data: Dict[str, Any]) -> str:
         to_encode, settings.JWT_SECRET_KEY, algorithm=settings.ALGORITHM
     )
     return encoded_jwt
+
+def decode_access_token(token: str) -> Optional[TokenData]:
+    """
+    Decodes a JWT access token and validates its signature and expiration.
+
+    Args:
+    - token (str): The JWT token to decode.
+
+    Returns:
+    - Optional[TokenData]: The decoded token data if valid, otherwise None.
+    
+    Raises:
+    - HTTPException: If the token is invalid or expired.
+    """
+    try:
+        payload = jwt.decode(
+            token, settings.JWT_SECRET_KEY, algorithms=[settings.ALGORITHM]
+        )
+        email: str = payload.get("sub")
+        role: str = payload.get("role")
+        if email is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token: Subject (sub) claim missing",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return TokenData(email=email, role=role)
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )

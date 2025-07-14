@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: str
     COHERE_API_KEY: str
 
+    PDF_STORAGE_PATH: str = "uploaded_pdfs"
+    CHROMA_DB_PATH: str = "chroma_db"
+    EMBEDDING_MODEL_NAME: str = "all-MiniLM-L6-v2"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
