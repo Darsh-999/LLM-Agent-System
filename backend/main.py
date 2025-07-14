@@ -1,45 +1,21 @@
 # backend/main.py
 
-import logging
 import os
 from contextlib import asynccontextmanager
-from logging.handlers import RotatingFileHandler
 from typing import Dict
 
 import motor.motor_asyncio
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
+from backend.api import auth
+from backend.core.config import settings
+from backend.core.logging_config import logger
+
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 MONGO_URI = os.getenv("MONGO_URI")
 DATABASE_NAME = os.getenv("DATABASE_NAME")
-
-
-def setup_logging():
-    log_dir = os.path.join(os.path.dirname(__file__), "..", "logs")
-    os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, "app.log")
-    logger = logging.getLogger("rag_app")
-    logger.setLevel(logging.INFO)
-    file_handler = RotatingFileHandler(
-        log_file, maxBytes=1024 * 1024 * 5, backupCount=5
-    )
-    file_handler.setLevel(logging.INFO)
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-    file_handler.setFormatter(formatter)
-    console_handler.setFormatter(formatter)
-    if not logger.handlers:
-        logger.addHandler(file_handler)
-        logger.addHandler(console_handler)
-    return logger
-
-
-logger = setup_logging()
 
 
 @asynccontextmanager
@@ -63,6 +39,8 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+app.include_router(auth.router)
 
 
 @app.get("/", tags=["Health Check"])
