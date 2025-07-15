@@ -35,12 +35,25 @@ async def get_link_by_id(
 
 
 async def delete_link_record(db: AsyncIOMotorDatabase, link_id: str) -> bool:
-    """Deletes a web link record from the database."""
-    # Note: Deleting embeddings from ChromaDB is more complex. For now, we are
-    # just deleting the metadata record. A future improvement would be to
-    # also remove the associated vectors.
+    """
+    Deletes a web link record from the database.
+    This version does not perform an ownership check, as it's intended
+    to be called by an authorized role (manager).
+
+    Args:
+    - db (AsyncIOMotorDatabase): The database instance.
+    - link_id (str): The ID of the link to delete.
+
+    Returns:
+    - bool: True if deletion was successful, False otherwise.
+    """
+    logger.info(f"Admin action: Deleting web link record '{link_id}'.")
+
     result = await db["web_links"].delete_one({"_id": ObjectId(link_id)})
+
     if result.deleted_count == 1:
         logger.info(f"Successfully deleted web link record '{link_id}'.")
         return True
+
+    logger.warning(f"Failed to delete web link record '{link_id}' from database.")
     return False

@@ -1,19 +1,14 @@
 # backend/api/links.py
 
-from typing import List, Dict, Annotated
+from typing import Annotated, Dict, List
+
+from bson import ObjectId
+from fastapi import (APIRouter, BackgroundTasks, Body, Depends, HTTPException,
+                     Request, status)
 from pydantic import HttpUrl
 
-from fastapi import (
-    APIRouter,
-    Depends,
-    HTTPException,
-    Request,
-    status,
-    BackgroundTasks,
-    Body,
-)
-
-from backend.api.dependencies import get_current_user
+from backend.api.dependencies import (get_current_user, require_manager_role,
+                                      require_upload_link_permission)
 from backend.core.logging_config import logger
 from backend.core.models import WebLinkOut
 from backend.db import link_manager
@@ -26,7 +21,7 @@ router = APIRouter(prefix="/links", tags=["Web Link Management"])
 async def submit_links_for_scraping(
     request: Request,
     background_tasks: BackgroundTasks,
-    current_user: Annotated[Dict, Depends(get_current_user)],
+    current_user: Annotated[Dict, Depends(require_upload_link_permission)],
     urls: List[HttpUrl] = Body(
         ..., embed=True, description="A list of URLs to be scraped."
     ),
@@ -38,7 +33,6 @@ async def submit_links_for_scraping(
     user_email = current_user["email"]
     logger.info(f"User '{user_email}' submitted {len(urls)} URLs for scraping.")
 
-    # Convert HttpUrl objects back to strings for the background task
     url_strings = [str(url) for url in urls]
 
     background_tasks.add_task(
@@ -55,7 +49,8 @@ async def list_user_links(
     request: Request, current_user: Annotated[Dict, Depends(get_current_user)]
 ):
     """Retrieves a list of all web links submitted by the current user."""
-    links = await link_manager.get_links_by_owner(request.app.db, current_user["email"])
+    logger.info(f"Fetching all web links (request by user '{current_user['email']}')")
+    links = await request.app.db["web_links"].find().to_list(length=None)
     return [WebLinkOut.model_validate(link) for link in links]
 
 
@@ -63,11 +58,16 @@ async def list_user_links(
 async def delete_link(
     request: Request,
     link_id: str,
-    current_user: Annotated[Dict, Depends(get_current_user)],
+    current_user: Annotated[Dict, Depends(require_manager_role)],
 ):
     """Deletes a specific web link owned by the current user."""
-    link_to_delete = await link_manager.get_link_by_id(request.app.db, link_id)
-    if not link_to_delete or link_to_delete["owner_email"] != current_user["email"]:
+    logger.info(
+        f"Manager '{current_user['email']}' attempting to delete web link with id: {link_id}"
+    )
+    link_to_delete = await request.app.db["web_links"].find_one(
+        {"_id": ObjectId(link_id)}
+    )
+    if not link_to_delete:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Web link not found."
         )
@@ -76,7 +76,6 @@ async def delete_link(
     if not success:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to delete web link record.",
+            detail="Failed to delete web link.",
         )
-
     return None

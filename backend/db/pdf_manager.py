@@ -133,3 +133,35 @@ async def delete_pdf_record(
         f"Failed to delete PDF record '{pdf_id}' from database for user '{owner_email}'."
     )
     return False
+
+
+async def delete_pdf_record_as_admin(
+    db: AsyncIOMotorDatabase, pdf_doc: Dict[str, Any]
+) -> bool:
+    """
+    Deletes a PDF record and its file from disk without an ownership check.
+    To be used by authorized roles like 'manager'.
+
+    Args:
+    - db (AsyncIOMotorDatabase): The database instance.
+    - pdf_doc (Dict[str, Any]): The full PDF document to be deleted.
+
+    Returns:
+    - bool: True if deletion was successful, False otherwise.
+    """
+    pdf_id_str = str(pdf_doc["_id"])
+    logger.info(f"Admin action: Deleting PDF record '{pdf_id_str}'.")
+
+    file_path = os.path.join(PDF_STORAGE_PATH, pdf_doc["filename"])
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            logger.info(f"Successfully deleted PDF file: {file_path}")
+        else:
+            logger.warning(f"PDF file not found on disk for deletion: {file_path}")
+    except OSError as e:
+        logger.error(f"Error deleting file {file_path}: {e}")
+
+    result = await db["pdfs"].delete_one({"_id": pdf_doc["_id"]})
+
+    return result.deleted_count == 1

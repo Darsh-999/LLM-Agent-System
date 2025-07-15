@@ -18,30 +18,22 @@ from backend.core.models import PDFBase
 from backend.db.pdf_manager import create_pdf_record
 
 
-# --- Helper function for multiprocessing ---
 def _load_and_process_single_pdf(file_path: str):
     """
-    Worker function: Loads a single PDF file using PyMuPDFLoader.
-    This runs in a separate process.
+    Worker function: Loads a single PDF file and adds source_type metadata.
     """
     try:
         loader = PyMuPDFLoader(file_path)
-        return loader.load()
+        docs = loader.load()
+        for doc in docs:
+            doc.metadata["source_type"] = "pdf"
+        return docs
     except Exception as e:
         logger.error(f"Error loading PDF in worker process {file_path}: {e}")
         return []
 
 
-# --- Main Processing Function ---
 async def process_and_embed_pdfs(file_paths: List[str], owner_email: str):
-    """
-    The main background task function. It takes a list of PDF file paths,
-    processes them, creates embeddings, stores them in ChromaDB, and updates MongoDB.
-
-    Args:
-        file_paths (List[str]): A list of absolute paths to the PDF files to process.
-        owner_email (str): The email of the user who uploaded the files.
-    """
     logger.info(
         f"Background task started: Processing {len(file_paths)} PDFs for user '{owner_email}'."
     )
@@ -75,7 +67,7 @@ async def process_and_embed_pdfs(file_paths: List[str], owner_email: str):
         embeddings = HuggingFaceEmbeddings(model_name=settings.EMBEDDING_MODEL_NAME)
 
         logger.info(f"Creating/updating vector store at: {settings.CHROMA_DB_PATH}")
-        Chroma.from_documents(
+        await Chroma.afrom_documents(
             documents=chunks,
             embedding=embeddings,
             persist_directory=settings.CHROMA_DB_PATH,
@@ -121,6 +113,7 @@ async def process_and_embed_pdfs(file_paths: List[str], owner_email: str):
         logger.info("Cleaning up temporary PDF files.")
         for path in file_paths:
             try:
-                os.remove(path)
+                if os.path.exists(path):
+                    os.remove(path)
             except OSError as e:
                 logger.error(f"Error cleaning up file {path}: {e}")
