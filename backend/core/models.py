@@ -1,7 +1,7 @@
 # backend/core/models.py
 
 from datetime import datetime
-from typing import Any, List, Literal, Optional
+from typing import Any, List, Literal, Optional, Union
 
 from bson import ObjectId
 from pydantic import BaseModel, EmailStr, Field, HttpUrl
@@ -161,7 +161,7 @@ class Citation(BaseModel):
 
     source_name: str
     source_title: Optional[str] = None
-    page_number: int
+    page_number: Union[int, None] = None
 
 
 class ChatMessageBase(BaseModel):
