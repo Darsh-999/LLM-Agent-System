@@ -2,6 +2,7 @@ import os
 from typing import IO, Any, Dict, List, Optional
 
 import requests
+from pydantic import HttpUrl
 from requests_toolbelt.multipart.encoder import MultipartEncoder
 
 
@@ -208,3 +209,53 @@ class ApiClient:
         except requests.exceptions.RequestException as e:
             print(f"Failed to post query to chat {chat_id}: {e}")
             return None
+
+    def list_links(self) -> Optional[List[Dict[str, Any]]]:
+        """
+        Fetches all web links submitted by the authenticated user.
+        """
+        if not self.token:
+            return None
+        url = f"{self.base_url}/links/"
+        try:
+            resp = requests.get(url, headers=self.headers)
+            resp.raise_for_status()
+            links = resp.json()
+            # Normalize IDs for consistency in the frontend
+            for link in links:
+                link["id"] = link.get("_id")
+            return links
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to list links: {e}")
+            return None
+
+    def submit_links(self, urls: List[str]) -> bool:
+        """
+        Submits one or more URLs to the backend for scraping.
+        Returns True if accepted (HTTP 202), False otherwise.
+        """
+        if not self.token:
+            return False
+        url = f"{self.base_url}/links/"
+        # The backend expects a specific JSON structure: {"urls": ["url1", "url2"]}
+        payload = {"urls": urls}
+        try:
+            resp = requests.post(url, json=payload, headers=self.headers)
+            return resp.status_code == 202
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to submit links: {e}")
+            return False
+
+    def delete_link(self, link_id: str) -> bool:
+        """
+        Deletes a web link by its ID. Returns True on 204, False otherwise.
+        """
+        if not self.token:
+            return False
+        url = f"{self.base_url}/links/{link_id}"
+        try:
+            resp = requests.delete(url, headers=self.headers)
+            return resp.status_code == 204
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to delete link {link_id}: {e}")
+            return False

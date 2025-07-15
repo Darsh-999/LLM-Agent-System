@@ -160,6 +160,7 @@ class Citation(BaseModel):
     """
 
     source_name: str
+    source_title: Optional[str] = None
     page_number: int
 
 
@@ -231,3 +232,36 @@ class ChatSessionOut(BaseModel):
         "populate_by_name": True,
         "json_encoders": {PyObjectId: str, ObjectId: str},
     }
+
+
+class WebLinkBase(BaseModel):
+    """Base model for a scraped web link."""
+
+    url: HttpUrl  # Pydantic's HttpUrl type provides URL validation
+    title: str
+    owner_email: EmailStr
+
+
+class WebLinkInDB(WebLinkBase):
+    """Model representing a web link as stored in the database."""
+
+    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+
+    class Config:
+        from_attributes = True
+        populate_by_name = True
+        json_encoders = {ObjectId: str}
+
+
+class WebLinkOut(BaseModel):
+    """Model for representing a web link in API responses."""
+
+    id: PyObjectId = Field(..., alias="_id")
+
+    url: HttpUrl
+    title: str
+
+    class Config:
+        from_attributes = True
+        populate_by_name = True
+        json_encoders = {PyObjectId: str}

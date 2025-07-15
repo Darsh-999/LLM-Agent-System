@@ -1,5 +1,7 @@
+import os
 import time
 
+import requests
 import streamlit as st
 from api_client import ApiClient
 
@@ -15,7 +17,7 @@ if "logged_in" not in st.session_state:
     st.session_state.jwt_token = None
     st.session_state.user_email = ""
     st.session_state.error_message = ""
-    st.session_state.managing_pdfs = False
+    st.session_state.managing_content = False  # Fixed: Added missing initialization
     st.session_state.chat_list = []
     st.session_state.current_chat_id = None
     st.session_state.messages = []
@@ -24,86 +26,118 @@ if "logged_in" not in st.session_state:
 # --- UI Rendering Functions ---
 
 
-def display_pdf_manager():
+def display_content_manager():
     """
-    Displays the UI for uploading, viewing, and deleting PDFs.
+    Displays a unified UI for managing both PDFs and Web Links using tabs.
     """
-    import requests
+    st.header("📚 Content Management")
+    st.info("Manage the knowledge sources for your RAG system.")
 
-    st.header("📚 PDF Management")
+    pdf_tab, link_tab = st.tabs(["Manage PDFs", "Manage Web Links"])
 
-    # --- PDF Upload Section ---
-    with st.expander("Upload New PDFs", expanded=True):
-        uploaded_files = st.file_uploader(
-            "Choose PDF files", accept_multiple_files=True, type="pdf"
-        )
-        if st.button("Upload and Process PDFs", key="upload_pdfs_btn"):
-            if uploaded_files:
+    # --- PDF Management Tab ---
+    with pdf_tab:
+        st.subheader("Upload New PDFs")
+        with st.form("pdf_upload_form", clear_on_submit=True):
+            uploaded_files = st.file_uploader(
+                "Choose PDF files",
+                accept_multiple_files=True,
+                type="pdf",
+                label_visibility="collapsed",
+            )
+            submitted = st.form_submit_button("Upload and Process PDFs")
+            if submitted and uploaded_files:
                 with st.spinner(
-                    "Uploading and processing PDFs... This may take a few minutes."
+                    "Uploading and processing... This may take a few minutes."
                 ):
-                    # Inline upload to avoid overriding Content-Type header
+                    # Using the direct requests call we validated earlier
                     url = f"{api_client.base_url}/pdfs/upload"
-                    # Prepare multipart payload
                     files_payload = [
-                        (
-                            "files",
-                            (f.name, f, "application/pdf"),
-                        )
+                        ("files", (f.name, f, "application/pdf"))
                         for f in uploaded_files
                     ]
-                    # Only send Authorization header
                     headers = {"Authorization": f"Bearer {api_client.token}"}
                     try:
                         resp = requests.post(url, headers=headers, files=files_payload)
-                        success = resp.status_code == 202
+                        if resp.status_code == 202:
+                            st.success(
+                                "Files submitted for processing! The list will refresh shortly."
+                            )
+                        else:
+                            st.error(
+                                f"Upload failed (status code: {resp.status_code})."
+                            )
                     except Exception as e:
-                        success = False
-                        st.error(f"Upload error: {e}")
+                        st.error(f"An error occurred during upload: {e}")
+                time.sleep(2)  # Give a moment for the user to see the message
+                st.rerun()
+            elif submitted:
+                st.warning("Please select at least one PDF file.")
 
-                    if success:
-                        st.success("Files submitted for processing.")
-                        # Rerun to refresh the list
-                        st.rerun()
-                    else:
-                        st.error(f"Upload failed (status code: {resp.status_code}).")
-            else:
-                st.warning("Please select at least one PDF file to upload.")
-
-    st.markdown("---")
-
-    # --- PDF List Section ---
-    st.subheader("Your Uploaded Documents")
-    pdfs = api_client.list_pdfs()
-    if pdfs is None:
-        st.error("Could not retrieve your PDF list. Is the backend running?")
-        return
-
-    if not pdfs:
-        st.info("You haven't uploaded any PDFs yet. Use the form above to get started.")
-    else:
-        for pdf in pdfs:
-            col1, col2, col3, col4 = st.columns([4, 3, 2, 1])
-            with col1:
-                title = pdf.get("title") or "_No title provided_"
-                st.write(f"**Title:** {title}")
-            with col2:
-                st.write(f"**Filename:** {pdf.get('filename')}")
-            with col3:
-                st.write(f"**Pages:** {pdf.get('page_count')}")
-            with col4:
-                if st.button("Delete", key=f"delete_{pdf['id']}_{pdf.get('filename')}"):
+        st.markdown("---")
+        st.subheader("Your Uploaded Documents")
+        pdfs = api_client.list_pdfs()
+        if pdfs:
+            for pdf in pdfs:
+                c1, c2, c3 = st.columns([4, 4, 1])
+                c1.write(f"**Title:** {pdf.get('title', 'N/A')}")
+                c2.write(f"**Filename:** {os.path.basename(pdf.get('filename', ''))}")
+                if c3.button("Delete", key=f"del_pdf_{pdf.get('id')}"):
                     with st.spinner("Deleting PDF..."):
-                        success = api_client.delete_pdf(pdf["id"])
+                        success = api_client.delete_pdf(pdf.get("id"))
                         if success:
-                            st.success(f"Deleted {pdf.get('filename')}")
+                            st.success(f"PDF deleted successfully!")
+                            time.sleep(1)
                             st.rerun()
                         else:
-                            st.error(f"Failed to delete {pdf.get('filename')}")
+                            st.error("Failed to delete PDF.")
+        else:
+            st.info("No PDFs uploaded yet.")
 
-    # Back to Chat button - only one instance with unique key
-    if st.button("← Back to Chat", key="back_to_chat_unique"):
-        st.session_state.managing_pdfs = False
+    # --- Web Link Management Tab ---
+    with link_tab:
+        st.subheader("Submit New Web Links")
+        with st.form("link_submit_form", clear_on_submit=True):
+            urls_input = st.text_area("Enter one URL per line")
+            submitted = st.form_submit_button("Scrape and Process URLs")
+            if submitted and urls_input:
+                urls = [url.strip() for url in urls_input.split("\n") if url.strip()]
+                if urls:
+                    with st.spinner("Submitting URLs for scraping..."):
+                        success = api_client.submit_links(urls)
+                    if success:
+                        st.success(
+                            "URLs submitted for processing! The list will refresh shortly."
+                        )
+                        time.sleep(2)
+                        st.rerun()
+                    else:
+                        st.error("Failed to submit URLs.")
+                else:
+                    st.warning("Please enter at least one valid URL.")
+
+        st.markdown("---")
+        st.subheader("Your Scraped Web Links")
+        links = api_client.list_links()
+        if links:
+            for link in links:
+                c1, c2, c3 = st.columns([4, 4, 1])
+                c1.write(f"**Title:** {link.get('title', 'N/A')}")
+                c2.link_button(link.get("url"), link.get("url"))
+                if c3.button("Delete", key=f"del_link_{link.get('id')}"):
+                    with st.spinner("Deleting link..."):
+                        success = api_client.delete_link(link.get("id"))
+                        if success:
+                            st.success("Link deleted successfully!")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error("Failed to delete link.")
+        else:
+            st.info("No web links submitted yet.")
+
+    if st.button("← Back to Chat", key="back_to_chat"):
+        st.session_state.managing_content = False
         st.rerun()
 
 
@@ -117,18 +151,20 @@ def display_sidebar():
 
         if st.button("✨ New Chat", use_container_width=True, key="new_chat_btn"):
             with st.spinner("Creating new chat..."):
-                new_chat_data = api_client.create_chat()
-
-            if new_chat_data:
-                st.session_state.chat_list.insert(0, new_chat_data)
-                st.session_state.current_chat_id = new_chat_data["id"]
+                new_chat = api_client.create_chat()
+            if new_chat:
+                st.session_state.chat_list.insert(0, new_chat)
+                st.session_state.current_chat_id = new_chat.get("id")
                 st.session_state.messages = []
+                st.session_state.managing_content = False  # Ensure we're in chat mode
                 st.rerun()
             else:
                 st.error("Failed to create new chat.")
 
-        if st.button("📚 Manage PDFs", use_container_width=True, key="manage_pdfs_btn"):
-            st.session_state.managing_pdfs = True
+        if st.button(
+            "📚 Manage Content", use_container_width=True, key="manage_content_btn"
+        ):
+            st.session_state.managing_content = True
             st.rerun()
 
         st.subheader("Recent Chats")
@@ -146,19 +182,24 @@ def display_sidebar():
                 key = f"chat_btn_{index}_{chat_id}"
                 if st.button(title, key=key, use_container_width=True):
                     st.session_state.current_chat_id = chat_id
-                    st.session_state.managing_pdfs = False
+                    st.session_state.managing_content = False
                     st.session_state.messages = []
                     st.rerun()
 
         if st.button("Logout", use_container_width=True, key="logout_btn"):
-            for k in list(st.session_state.keys()):
-                del st.session_state[k]
-            st.rerun()
+            logout()
+
+
+def logout():
+    """Resets the session state to log the user out."""
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    st.rerun()
 
 
 def display_main_chat_area():
     """
-    Displays the main chat interface, including messages and the input form.
+    Displays the main chat interface.
     """
     st.title("🤖 Agentic RAG Chat")
 
@@ -166,25 +207,28 @@ def display_main_chat_area():
         st.info("Select a chat from the sidebar or start a new one.")
         return
 
+    # Load and display chat history
     if not st.session_state.messages:
         with st.spinner("Loading chat history..."):
-            msgs = api_client.get_chat_messages(st.session_state.current_chat_id)
-            if msgs is not None:
-                st.session_state.messages = msgs
-            else:
-                st.error("Could not load messages for this chat.")
-                return
+            messages = api_client.get_chat_messages(st.session_state.current_chat_id)
+            st.session_state.messages = messages if messages else []
 
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
             if msg["role"] == "assistant" and msg.get("citations"):
                 with st.expander("Sources"):
-                    for cit in msg["citations"]:
-                        st.caption(
-                            f"- {cit['source_name']} (Page {cit['page_number']})"
-                        )
+                    for citation in msg["citations"]:
+                        # Check if it's a web link or a PDF
+                        if citation.get('page_number') is not None:
+                            # It's a PDF citation
+                            st.caption(f"- {citation['source_name']} (Page {citation['page_number']})")
+                        else:
+                            # It's a web link citation
+                            title = citation['source_title'] or citation['source_name']
+                            st.caption(f"- [{title}]({citation['source_name']})")
 
+    # Chat input
     if prompt := st.chat_input("Ask a question about your documents..."):
         st.session_state.messages.append(
             {"role": "user", "content": prompt, "citations": []}
@@ -197,18 +241,8 @@ def display_main_chat_area():
 
         if response:
             st.session_state.messages.append(response)
-            with st.chat_message("assistant"):
-                st.markdown(response["content"])
-                if response.get("citations"):
-                    with st.expander("Sources"):
-                        for cit in response["citations"]:
-                            st.caption(
-                                f"- {cit['source_name']} (Page {cit['page_number']})"
-                            )
-
-            if len(st.session_state.messages) <= 2:
-                st.session_state.chat_list = []
-                st.rerun()
+            # Rerun to display the new message and citations
+            st.rerun()
         else:
             st.error("Failed to get a response from the assistant.")
 
@@ -279,7 +313,8 @@ else:
         api_client.set_token(st.session_state.jwt_token)
 
     display_sidebar()
-    if st.session_state.managing_pdfs:
-        display_pdf_manager()
+
+    if st.session_state.get("managing_content", False):
+        display_content_manager()
     else:
         display_main_chat_area()

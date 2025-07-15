@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     PDF_STORAGE_PATH: str = "uploaded_pdfs"
     CHROMA_DB_PATH: str = "chroma_db"
     EMBEDDING_MODEL_NAME: str = "all-MiniLM-L6-v2"
+    WEB_SCRAPER_REQUEST_TIMEOUT: int = 10
 
     class Config:
         env_file = ".env"

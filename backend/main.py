@@ -8,7 +8,7 @@ import motor.motor_asyncio
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
-from backend.api import auth, pdfs, chats
+from backend.api import auth, pdfs, chats, links
 from backend.core.config import settings
 from backend.core.logging_config import logger
 
@@ -43,6 +43,7 @@ app = FastAPI(
 app.include_router(auth.router)
 app.include_router(pdfs.router)
 app.include_router(chats.router)
+app.include_router(links.router)
 
 
 @app.get("/", tags=["Health Check"])

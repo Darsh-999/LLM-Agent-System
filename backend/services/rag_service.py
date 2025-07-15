@@ -90,16 +90,31 @@ async def get_rag_response(
 
     # Format citations
     citations = []
-    if result.get("source_documents"):
-        unique_sources = set()
-        for doc in result["source_documents"]:
-            source_file = doc.metadata.get("source", "N/A")
-            page_num = doc.metadata.get("page", -1) + 1
-            unique_sources.add((os.path.basename(source_file), page_num))
+    unique_sources = set()  # Use a set to track uniqueness to avoid duplicate citations
 
-        citations = [
-            Citation(source_name=source, page_number=page)
-            for source, page in sorted(list(unique_sources))
-        ]
+    if result.get("source_documents"):
+        for doc in result["source_documents"]:
+            metadata = doc.metadata
+            source = metadata.get("source")
+
+            if not source:
+                continue
+
+            # Check if the source is a web link
+            if source.startswith("http"):
+                # For web links, the source URL is the unique identifier
+                if source not in unique_sources:
+                    title = metadata.get("title", source)  # Use URL as fallback title
+                    citations.append(Citation(source_name=source, source_title=title))
+                    unique_sources.add(source)
+            else:
+                # It's a PDF source
+                filename = os.path.basename(source)
+                page = metadata.get("page", -1) + 1
+                unique_key = (filename, page)  # Uniqueness is based on file and page
+
+                if unique_key not in unique_sources:
+                    citations.append(Citation(source_name=filename, page_number=page))
+                    unique_sources.add(unique_key)
 
     return answer, citations
