@@ -1,9 +1,11 @@
 # backend/core/models.py
 
-from typing import Literal, Optional
+from datetime import datetime
+from typing import Any, List, Literal, Optional
 
 from bson import ObjectId
 from pydantic import BaseModel, EmailStr, Field, HttpUrl
+from pydantic_core import core_schema
 
 # Define the allowed roles using a Literal type for strict validation
 Role = Literal["manager", "assistant_manager", "developer"]
@@ -11,18 +13,41 @@ Role = Literal["manager", "assistant_manager", "developer"]
 
 class PyObjectId(ObjectId):
     @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: Any
+    ) -> core_schema.CoreSchema:
+        """
+        Defines the Pydantic core schema for the ObjectId type.
+        This ensures correct validation, serialization, and JSON schema generation.
+        """
 
-    @classmethod
-    def validate(cls, v, *args, **kwargs):
-        if not ObjectId.is_valid(v):
-            raise ValueError("Invalid ObjectId")
-        return ObjectId(v)
+        def validate_from_str(v: str) -> ObjectId:
+            """Validate that the input string is a valid ObjectId."""
+            if not ObjectId.is_valid(v):
+                raise ValueError("Invalid ObjectId")
+            return ObjectId(v)
 
-    @classmethod
-    def __get_pydantic_json_schema__(cls, field_schema):
-        field_schema.update(type="string")
+        def validate_from_objectid(v: ObjectId) -> ObjectId:
+            """Pass through ObjectId instances."""
+            return v
+
+        # Create a union schema that handles both string and ObjectId inputs
+        python_schema = core_schema.union_schema(
+            [
+                core_schema.no_info_after_validator_function(
+                    validate_from_objectid, core_schema.is_instance_schema(ObjectId)
+                ),
+                core_schema.no_info_after_validator_function(
+                    validate_from_str, core_schema.str_schema()
+                ),
+            ]
+        )
+
+        return core_schema.json_or_python_schema(
+            json_schema=core_schema.str_schema(),
+            python_schema=python_schema,
+            serialization=core_schema.plain_serializer_function_ser_schema(str),
+        )
 
 
 class UserBase(BaseModel):
@@ -104,10 +129,11 @@ class PDFInDB(PDFBase):
 
     id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
 
-    class Config:
-        from_attributes = True
-        populate_by_name = True
-        json_encoders = {ObjectId: str}
+    model_config = {
+        "from_attributes": True,
+        "populate_by_name": True,
+        "json_encoders": {ObjectId: str},
+    }
 
 
 class PDFOut(BaseModel):
@@ -117,12 +143,91 @@ class PDFOut(BaseModel):
     """
 
     id: PyObjectId = Field(..., alias="_id")
-
     filename: str
     title: Optional[str] = None
     page_count: int
 
-    class Config:
-        from_attributes = True
-        populate_by_name = True
-        json_encoders = {PyObjectId: str}
+    model_config = {
+        "from_attributes": True,
+        "populate_by_name": True,
+        "json_encoders": {PyObjectId: str},
+    }
+
+
+class Citation(BaseModel):
+    """
+    Model for a single citation source.
+    """
+
+    source_name: str
+    page_number: int
+
+
+class ChatMessageBase(BaseModel):
+    """
+    Base model for a single message within a chat session.
+    """
+
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class ChatMessageInDB(ChatMessageBase):
+    """
+    Model representing a message as stored in the database.
+    """
+
+    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    chat_id: PyObjectId
+    created_at: datetime = Field(default_factory=datetime.now)
+    citations: List[Citation] = []
+
+
+class ChatMessageOut(ChatMessageBase):
+    """
+    Model for representing a message in API responses.
+    """
+
+    id: PyObjectId = Field(..., alias="_id")
+    created_at: datetime
+    citations: List[Citation] = []
+
+    model_config = {
+        "from_attributes": True,
+        "populate_by_name": True,
+        "json_encoders": {PyObjectId: str, ObjectId: str},
+    }
+
+
+class ChatSessionBase(BaseModel):
+    """
+    Base model for a chat session.
+    """
+
+    owner_email: EmailStr
+    title: str = "New Chat"
+
+
+class ChatSessionInDB(ChatSessionBase):
+    """
+    Model representing a chat session as stored in the database.
+    """
+
+    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    created_at: datetime = Field(default_factory=datetime.now)
+
+
+class ChatSessionOut(BaseModel):
+    """
+    Model for representing a chat session in API list responses.
+    """
+
+    id: PyObjectId = Field(..., alias="_id")
+    title: str
+    created_at: datetime
+
+    model_config = {
+        "from_attributes": True,
+        "populate_by_name": True,
+        "json_encoders": {PyObjectId: str, ObjectId: str},
+    }
